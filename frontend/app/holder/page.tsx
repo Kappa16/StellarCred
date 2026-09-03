@@ -17,6 +17,7 @@ import {
   IconCloudUpload,
   IconStack2,
   IconDownload,
+  IconChartBar,
 } from "@tabler/icons-react";
 import { WalletButton } from "@/components/WalletButton";
 import { useWallet } from "@/lib/wallet-context";
@@ -70,11 +71,43 @@ const TransferImportModal = dynamic(
   { ssr: false },
 );
 
+
 // Parse "90 days", "30 days" etc from the credential's expiry string.
 function credTtlSecs(cred: Credential): number {
   const match = cred.expiry?.match(/(\d+)/);
   return (match ? parseInt(match[1]) : 30) * 86_400;
 }
+
+const ProofPerfPanel = dynamic(
+  () => import("@/components/ProofPerfPanel").then((m) => m.ProofPerfPanel),
+  { ssr: false },
+);
+// Extracted hooks
+import { useCredentialStore } from "@/lib/hooks/useCredentialStore";
+import { useBatchSelection } from "@/lib/hooks/useBatchSelection";
+import { useImportExport } from "@/lib/hooks/useImportExport";
+import {
+  proofStatus,
+  isExpiringSoon,
+  daysRemaining,
+} from "@/lib/proof-helpers";
+
+// Extracted subcomponents
+import { SectionLabel } from "@/components/holder/SectionLabel";
+import { CredCard } from "@/components/holder/CredCard";
+import { BatchBar } from "@/components/holder/BatchBar";
+import { ImportPanel } from "@/components/holder/ImportPanel";
+import { ProofFlowView } from "@/components/holder/ProofFlowView";
+import { BatchProofFlowView } from "@/components/holder/BatchProofFlowView";
+import { SponsorBanner } from "@/components/holder/SponsorBanner";
+import { GuardianRecoveryControl } from "@/components/holder/GuardianRecoveryControl";
+
+// Sponsored submission
+import { isSponsorAvailable, submitSponsoredProof } from "@/lib/sponsor";
+import { submitProof } from "@/lib/contracts";
+
+// ── Page view state ───────────────────────────────────────────────────────────
+
 
 // Downloads every locally stored credential as a JSON backup file. Pairs with
 // the "Import credential JSON" panel: the file's contents can be pasted back
@@ -143,7 +176,18 @@ function formatExpiryDate(ts: number): string {
   });
 }
 
+
 // ── Credential card ──────────────────────────────────────────────────────────
+
+  const {
+    creds,
+    reload: reloadCreds,
+    save: saveCred,
+    remove: removeCred,
+    markCredentialProved,
+    markCredentialsProved,
+  } = useCredentialStore();
+
 
 function CredCard({
   c,
@@ -326,6 +370,7 @@ function HolderInner() {
   const [detailCred, setDetailCred] = useState<Credential | null>(null);
   const [transferCred, setTransferCred] = useState<Credential | null>(null);
   const [importPayload, setImportPayload] = useState<string | null>(null);
+  const [showPerf, setShowPerf] = useState(false);
 
   useEffect(() => setCreds(loadCredentials()), []);
 
@@ -470,11 +515,25 @@ function HolderInner() {
           <a href="/presets" className="btn btn-secondary">
             Presets
           </a>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setShowPerf((v) => !v)}
+            title="Proving performance &amp; telemetry debug view"
+            aria-expanded={showPerf}
+          >
+            <IconChartBar size={14} />
+            {showPerf ? "Hide perf" : "Perf"}
+          </button>
           <WalletButton />
         </div>
       </div>
 
       <ConfigBanner />
+
+      {/* Proving performance & telemetry debug view (GitHub #432). Lazily
+          loaded so it stays out of the holder route's initial bundle. Rendered
+          above the credential list when opened. */}
+      {showPerf && <ProofPerfPanel />}
 
       {isPreview && (
         <div
@@ -749,11 +808,25 @@ function HolderInner() {
                   <IconDownload size={14} />
                   Export backup
                 </button>
+                <GuardianRecoveryControl
+                  hasCredentials={creds.length > 0}
+                  onRestored={(recovered) => {
+                    reloadCreds();
+                    toast.success(
+                      `Successfully restored ${recovered.length} credential${recovered.length === 1 ? "" : "s"}`,
+                    );
+                  }}
+                />
               </div>
               <p className="faint" style={{ fontSize: "0.75rem", maxWidth: 560, lineHeight: 1.6, margin: 0 }}>
                 Credentials live only in this browser (localStorage) — export a backup
+
                 before clearing site data or switching devices, and restore it here with{" "}
                 “Import credential JSON”.{" "}
+
+                or set up <strong>Guardian recovery</strong> (Shamir Secret Sharing) before
+                clearing site data or switching devices.{" "}
+
                 <Link
                   href="/docs#storage"
                   style={{ color: "var(--accent)", textDecoration: "underline" }}
@@ -795,12 +868,14 @@ function HolderInner() {
           onClose={() => setImportPayload(null)}
         />
       )}
+
     </>
   );
 }
 
 // useSearchParams() must be inside a Suspense boundary in the App Router.
 export default function HolderPage() {
+
   return (
     <Suspense fallback={null}>
       <HolderInner />
@@ -1999,3 +2074,7 @@ function toHex(u8: Uint8Array): string {
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
+
+  return <Suspense fallback={null}><HolderInner /></Suspense>;
+}
+
