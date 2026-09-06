@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { IconBook2, IconCode, IconMenu2, IconX, IconHelp } from "@tabler/icons-react";
 import { ThemeToggle } from "./ThemeToggle";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 import { resetOnboarding } from "@/lib/onboarding";
 
 const LINKS = [
@@ -125,6 +126,7 @@ export function SiteNav() {
             Developers
           </Link>
           <ThemeToggle />
+          <LanguageSwitcher />
         </div>
       </div>
     </header>
